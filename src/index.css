@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Define theme variables for both Light and Dark modes */
+@theme {
+  --color-app-text: #6b6375;
+  --color-app-text-h: #08060d;
+  --color-app-bg: #ffffff;
+  --color-app-border: #e5e4e7;
+  --color-app-code: #f4f3ec;
+  --color-accent-purple: #aa3bff;
+
+  --font-sans: system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
+}
+
+/* Base Body Setup with Dark Mode variables */
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 18px;
+    line-height: 1.45;
+    letter-spacing: 0.18px;
+    color: #6b6375;
+    background-color: #ffffff;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Responsive font sizing from your media query */
+  @media (max-width: 1024px) {
+    body {
+      font-size: 16px;
+    }
+  }
+
+  /* Dark mode automatic overrides */
+  @media (prefers-color-scheme: dark) {
+    body {
+      color: #9ca3af;
+      background-color: #16171d;
+    }
+
+    #social .button-icon {
+      filter: invert(1) brightness(2);
+    }
+  }
+}
+
+/* Global Keyframes for component animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
