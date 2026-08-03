@@ -35,3 +35,15 @@ export const getMovieVideos = async (movieId) => {
     return [];
   }
 };
+
+export const getMovieDetails = async (movieId) => {
+  try {
+    const response = await fetch(
+      `${BASE_URL}/movie/${movieId}?api_key=${API_KEY}`,
+    );
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching movie details:", error);
+    return null;
+  }
+};

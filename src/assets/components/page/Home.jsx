@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import MovieCard from "../MovieCard";
 import HeroBanner from "../HeroBanner";
 import MovieModal from "../MovieModal";
+import MoviePlayerModal from "../MoviePlayerModal";
 import {
   searchMovies,
   getPopularMovies,
@@ -13,6 +14,7 @@ function Home() {
   const [movies, setMovies] = useState([]);
   const [featuredMovie, setFeaturedMovie] = useState(null);
   const [selectedMovie, setSelectedMovie] = useState(null);
+  const [playingMovie, setPlayingMovie] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -58,7 +60,7 @@ function Home() {
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 text-zinc-100">
       {!searchQuery && featuredMovie && (
-        <HeroBanner movie={featuredMovie} onWatchTrailer={setSelectedMovie} />
+        <HeroBanner movie={featuredMovie} onWatchTrailer={setPlayingMovie} />
       )}
 
       <form onSubmit={handleSearch} className="max-w-xl mx-auto mb-10">
@@ -109,6 +111,17 @@ function Home() {
         <MovieModal
           movie={selectedMovie}
           onClose={() => setSelectedMovie(null)}
+          onWatchMovie={(movie) => {
+            setSelectedMovie(null);
+            setPlayingMovie(movie);
+          }}
+        />
+      )}
+
+      {playingMovie && (
+        <MoviePlayerModal
+          movie={playingMovie}
+          onClose={() => setPlayingMovie(null)}
         />
       )}
     </div>
