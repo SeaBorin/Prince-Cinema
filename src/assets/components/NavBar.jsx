@@ -1,111 +1,194 @@
-import React, { useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { useMovieContext } from "../../contexts/MovieContext.jsx";
-import { useAuth } from "../../contexts/AuthContext.jsx";
-import AuthModal from "./AuthModal.jsx";
+import React, { useState, useEffect } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
+import { auth } from "../../firebase";
+
+// Import your custom logo image
 import logoImg from "../../assets/prince-cinema-img.png";
 
-function NavBar() {
+export default function NavBar({ onOpenAuthModal }) {
+  const authContext = useAuth() || {};
+
+  // Handles both 'currentUser' or 'user' naming conventions in AuthContext
+  const contextUser = authContext.currentUser || authContext.user;
+
+  // Local state as a safety fallback linked directly to Firebase Auth
+  const [firebaseUser, setFirebaseUser] = useState(auth?.currentUser || null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
   const location = useLocation();
-  const { favorites } = useMovieContext();
-  const { user, logout } = useAuth();
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const navigate = useNavigate();
+
+  // Listen directly to Firebase Auth state changes as a backup trigger
+  useEffect(() => {
+    if (!auth) return;
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setFirebaseUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Active user (prioritizes Context, falls back to direct Firebase instance)
+  const activeUser = contextUser || firebaseUser;
+
+  const handleLogout = async () => {
+    try {
+      if (authContext.logout) {
+        await authContext.logout();
+      } else if (authContext.signOut) {
+        await authContext.signOut();
+      } else if (auth) {
+        await auth.signOut();
+      }
+      navigate("/");
+    } catch (error) {
+      console.error("Failed to log out:", error);
+    }
+  };
+
+  const navLinks = [
+    { name: "Home", path: "/" },
+    { name: "Favorites", path: "/favorites" },
+    { name: "Services", path: "/services" },
+    { name: "About", path: "/about" },
+    { name: "Profile", path: "/profile" },
+  ];
 
   const isActive = (path) => location.pathname === path;
 
   return (
-    <>
-      <nav className="sticky top-0 z-40 bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800/80 px-6 py-4 flex items-center justify-between text-white">
-        {/* Brand Logo & Image */}
-        <Link to="/" className="flex items-center gap-3 group">
+    <header className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/80">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        {/* Brand / Custom Logo */}
+        <Link to="/" className="flex items-center group">
           <img
             src={logoImg}
             alt="Prince Cinema Logo"
-            className="w-10 h-10 object-contain rounded-lg transition-transform group-hover:scale-105"
+            className="h-10 sm:h-12 w-auto object-contain group-hover:scale-105 transition-transform duration-300"
           />
-          <span className="text-2xl font-black text-amber-500 tracking-wider">
-            PRINCECINEMA
-          </span>
         </Link>
 
         {/* Navigation Links */}
-        <div className="hidden md:flex items-center gap-2 lg:gap-4">
-          <Link
-            to="/"
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition ${
-              isActive("/")
-                ? "bg-amber-500/10 text-amber-400 border border-amber-500/30"
-                : "text-zinc-400 hover:text-white"
-            }`}
-          >
-            Home
-          </Link>
-          <Link
-            to="/favorites"
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2 ${
-              isActive("/favorites")
-                ? "bg-amber-500/10 text-amber-400 border border-amber-500/30"
-                : "text-zinc-400 hover:text-white"
-            }`}
-          >
-            Favorites
-            {favorites.length > 0 && (
-              <span className="bg-amber-500 text-zinc-950 text-xs px-2 py-0.5 rounded-full font-bold">
-                {favorites.length}
-              </span>
-            )}
-          </Link>
-          <Link
-            to="/about"
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition ${
-              isActive("/about")
-                ? "bg-amber-500/10 text-amber-400 border border-amber-500/30"
-                : "text-zinc-400 hover:text-white"
-            }`}
-          >
-            About
-          </Link>
-          <Link
-            to="/services"
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition ${
-              isActive("/services")
-                ? "bg-amber-500/10 text-amber-400 border border-amber-500/30"
-                : "text-zinc-400 hover:text-white"
-            }`}
-          >
-            Services
-          </Link>
-        </div>
+        <nav className="hidden md:flex items-center gap-1 bg-zinc-900/60 p-1.5 rounded-full border border-zinc-800/60">
+          {navLinks.map((link) => (
+            <Link
+              key={link.path}
+              to={link.path}
+              className={`px-5 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
+                isActive(link.path)
+                  ? "bg-amber-500 text-zinc-950 shadow-md shadow-amber-500/20 font-semibold"
+                  : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50"
+              }`}
+            >
+              {link.name}
+            </Link>
+          ))}
+        </nav>
 
-        {/* Auth Section */}
-        <div className="flex items-center gap-3">
-          {user ? (
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-zinc-400 hidden sm:inline">
-                {user.email}
+        {/* Dynamic Auth Button Area (Sign In vs Sign Out) */}
+        <div className="hidden md:flex items-center gap-4">
+          {activeUser ? (
+            <div className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 p-1.5 pl-4 rounded-full">
+              <span className="text-xs font-semibold text-zinc-300 flex items-center gap-2 max-w-[180px] truncate">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0"></span>
+                {activeUser.email || activeUser.displayName || "User"}
               </span>
               <button
-                onClick={logout}
-                className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 text-xs text-white rounded-xl transition cursor-pointer"
+                onClick={handleLogout}
+                className="px-4 py-2 text-xs font-bold rounded-full bg-amber-500 text-zinc-950 hover:bg-amber-400 transition-all shadow-md shadow-amber-500/10"
               >
                 Sign Out
               </button>
             </div>
           ) : (
             <button
-              onClick={() => setIsAuthOpen(true)}
-              className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-xs font-bold text-zinc-950 rounded-xl transition cursor-pointer shadow-lg shadow-amber-500/20"
+              onClick={onOpenAuthModal}
+              className="px-6 py-2.5 rounded-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-bold text-sm shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 hover:-translate-y-0.5 transition-all duration-300"
             >
-              Sign In / Register
+              Sign In
             </button>
           )}
         </div>
-      </nav>
 
-      {/* Auth Modal Popup */}
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
-    </>
+        {/* Mobile menu trigger */}
+        <button
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          className="md:hidden p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100"
+        >
+          <svg
+            className="w-6 h-6"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            {isMenuOpen ? (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
+            ) : (
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 6h16M4 12h16M4 18h16"
+              />
+            )}
+          </svg>
+        </button>
+      </div>
+
+      {/* Mobile Menu Dropdown */}
+      {isMenuOpen && (
+        <div className="md:hidden bg-zinc-950 border-b border-zinc-800 px-4 pt-2 pb-6 space-y-3">
+          {navLinks.map((link) => (
+            <Link
+              key={link.path}
+              to={link.path}
+              onClick={() => setIsMenuOpen(false)}
+              className={`block px-4 py-3 rounded-xl text-base font-medium ${
+                isActive(link.path)
+                  ? "bg-amber-500 text-zinc-950 font-semibold"
+                  : "text-zinc-300 hover:bg-zinc-900"
+              }`}
+            >
+              {link.name}
+            </Link>
+          ))}
+
+          <div className="pt-4 border-t border-zinc-800">
+            {activeUser ? (
+              <div className="space-y-3">
+                <p className="px-4 text-xs font-semibold text-zinc-400 truncate">
+                  Signed in as:{" "}
+                  <span className="text-amber-400">{activeUser.email}</span>
+                </p>
+                <button
+                  onClick={() => {
+                    handleLogout();
+                    setIsMenuOpen(false);
+                  }}
+                  className="w-full py-3 rounded-xl bg-amber-500 text-zinc-950 font-bold text-center"
+                >
+                  Sign Out
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  onOpenAuthModal();
+                }}
+                className="w-full py-3 rounded-xl bg-amber-500 text-zinc-950 font-bold text-center"
+              >
+                Sign In
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </header>
   );
 }
-
-export default NavBar;

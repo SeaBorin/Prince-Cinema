@@ -1,129 +1,188 @@
+// src/assets/components/page/Home.jsx
+
 import React, { useState, useEffect } from "react";
+import { getPopularMovies, searchMovies } from "../../../services/api";
+import { useAuth } from "../../../contexts/AuthContext";
+import { db } from "../../../firebase";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import MovieCard from "../MovieCard";
 import HeroBanner from "../HeroBanner";
 import MovieModal from "../MovieModal";
-import MoviePlayerModal from "../MoviePlayerModal";
-import {
-  searchMovies,
-  getPopularMovies,
-  getTrendingMovies,
-} from "../../../services/api";
+import BookingModal from "../BookingModal";
+import PaymentModal from "../PaymentModal";
+import TicketModal from "../TicketModal";
+import AuthModal from "../AuthModal";
 
 function Home() {
-  const [searchQuery, setSearchQuery] = useState("");
+  const { user, currentUser } = useAuth();
+  const activeUser = user || currentUser;
+
   const [movies, setMovies] = useState([]);
-  const [featuredMovie, setFeaturedMovie] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedMovie, setSelectedMovie] = useState(null);
-  const [playingMovie, setPlayingMovie] = useState(null);
-  const [error, setError] = useState(null);
+  const [bookingMovie, setBookingMovie] = useState(null);
+
+  // Modal Auth Trigger State
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+
+  // Payment and Ticket States
+  const [pendingBooking, setPendingBooking] = useState(null);
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Sorts ALL movies by release_date so newest releases show first
+  const processMovies = (movieList) => {
+    return [...movieList].sort((a, b) => {
+      const dateA = a.release_date ? new Date(a.release_date) : new Date(0);
+      const dateB = b.release_date ? new Date(b.release_date) : new Date(0);
+      return dateB - dateA; // Newest date comes first
+    });
+  };
 
   useEffect(() => {
     const loadMovies = async () => {
       try {
-        const [popular, trending] = await Promise.all([
-          getPopularMovies(),
-          getTrendingMovies(),
-        ]);
-        setMovies(popular);
-        if (trending.length > 0) {
-          setFeaturedMovie(trending[0]);
-        }
+        const popular = await getPopularMovies();
+        setMovies(processMovies(popular));
       } catch (err) {
         console.error(err);
-        setError("Failed to load movies. Check your internet connection.");
       } finally {
         setLoading(false);
       }
     };
-
     loadMovies();
   }, []);
 
   const handleSearch = async (e) => {
     e.preventDefault();
-    if (!searchQuery.trim() || loading) return;
-
+    if (!searchQuery.trim()) return;
     setLoading(true);
     try {
-      const searchResults = await searchMovies(searchQuery);
-      setMovies(searchResults);
-      setError(null);
+      const results = await searchMovies(searchQuery);
+      setMovies(processMovies(results));
     } catch (err) {
       console.error(err);
-      setError("Failed to search movies.");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleBookMovie = (movie) => {
+    // 🔒 RESTRICT GUEST ACCOUNTS: Force sign-in if not authenticated
+    if (!activeUser) {
+      setIsAuthOpen(true);
+      return;
+    }
+    setBookingMovie(movie);
+  };
+
+  const handleProceedToPayment = (bookingData) => {
+    setBookingMovie(null);
+    setPendingBooking(bookingData);
+  };
+
+  // Save successful order directly to Firestore under user subcollection
+  const handlePaymentSuccess = async (paidBooking) => {
+    setPendingBooking(null);
+    setConfirmedBooking(paidBooking);
+
+    if (activeUser) {
+      try {
+        const userBookingsRef = collection(
+          db,
+          "users",
+          activeUser.uid,
+          "bookings",
+        );
+        await addDoc(userBookingsRef, {
+          ...paidBooking,
+          createdAt: serverTimestamp(),
+          status: "CONFIRMED",
+        });
+      } catch (error) {
+        console.error("Error saving booking to Firestore:", error);
+      }
+    }
+  };
+
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 text-zinc-100">
-      {!searchQuery && featuredMovie && (
-        <HeroBanner movie={featuredMovie} onWatchTrailer={setPlayingMovie} />
+    <div className="min-h-screen bg-zinc-950 text-white p-6 max-w-7xl mx-auto">
+      {movies.length > 0 && (
+        <HeroBanner
+          movie={movies[0]}
+          onWatchTrailer={(m) => setSelectedMovie(m)}
+        />
       )}
 
-      <form onSubmit={handleSearch} className="max-w-xl mx-auto mb-10">
-        <div className="relative flex items-center">
-          <input
-            type="text"
-            placeholder="Search movies by title..."
-            className="w-full py-3.5 pl-5 pr-28 rounded-2xl bg-zinc-900 border border-zinc-800 text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-          <button
-            type="submit"
-            className="absolute right-2 py-2 px-5 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold text-sm rounded-xl transition cursor-pointer"
-          >
-            Search
-          </button>
-        </div>
+      {/* Search Bar */}
+      <form onSubmit={handleSearch} className="mb-8 flex gap-3">
+        <input
+          type="text"
+          placeholder="Search movies now showing in Cambodia..."
+          className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 text-white"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <button
+          type="submit"
+          className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-xl text-sm transition"
+        >
+          Search
+        </button>
       </form>
 
-      <h2 className="text-xl md:text-2xl font-bold mb-6 tracking-wide text-white">
-        {searchQuery ? `Search Results for "${searchQuery}"` : "Popular Movies"}
-      </h2>
-
-      {error && (
-        <div className="text-amber-300 bg-amber-950/40 border border-amber-800/50 p-4 rounded-xl text-center my-4">
-          {error}
-        </div>
-      )}
-
+      {/* Movie Grid */}
+      <h2 className="text-xl font-bold mb-4 text-zinc-200">Now Showing</h2>
       {loading ? (
-        <div className="flex justify-center py-20 text-zinc-500 font-medium">
-          Loading movies...
-        </div>
+        <p className="text-zinc-500 text-sm">Loading movies...</p>
+      ) : movies.length === 0 ? (
+        <p className="text-zinc-400 text-sm">No movies found.</p>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {movies.map((movie) => (
             <MovieCard
-              movie={movie}
               key={movie.id}
-              onSelectMovie={setSelectedMovie}
+              movie={movie}
+              onSelectMovie={(m) => setSelectedMovie(m)}
+              onBookMovie={handleBookMovie}
+              onRequireAuth={() => setIsAuthOpen(true)}
             />
           ))}
         </div>
       )}
 
-      {selectedMovie && (
-        <MovieModal
-          movie={selectedMovie}
-          onClose={() => setSelectedMovie(null)}
-          onWatchMovie={(movie) => {
-            setSelectedMovie(null);
-            setPlayingMovie(movie);
-          }}
-        />
-      )}
+      {/* Modals */}
+      <MovieModal
+        movie={selectedMovie}
+        onClose={() => setSelectedMovie(null)}
+      />
 
-      {playingMovie && (
-        <MoviePlayerModal
-          movie={playingMovie}
-          onClose={() => setPlayingMovie(null)}
-        />
-      )}
+      {/* 1. Seat & Food Selection */}
+      <BookingModal
+        movie={bookingMovie}
+        isOpen={Boolean(bookingMovie)}
+        onClose={() => setBookingMovie(null)}
+        onProceedToPayment={handleProceedToPayment}
+        onRequireAuth={() => setIsAuthOpen(true)}
+      />
+
+      {/* Auth Modal Triggered when not signed in */}
+      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
+
+      {/* 2. KHQR / ABA Payment Modal */}
+      <PaymentModal
+        booking={pendingBooking}
+        isOpen={Boolean(pendingBooking)}
+        onClose={() => setPendingBooking(null)}
+        onPaymentSuccess={handlePaymentSuccess}
+      />
+
+      {/* 3. Confirmed Digital Ticket Pass */}
+      <TicketModal
+        booking={confirmedBooking}
+        isOpen={Boolean(confirmedBooking)}
+        onClose={() => setConfirmedBooking(null)}
+      />
     </div>
   );
 }

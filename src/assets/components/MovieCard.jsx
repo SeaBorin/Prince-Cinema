@@ -1,18 +1,87 @@
 import React from "react";
 import { useMovieContext } from "../../contexts/MovieContext.jsx";
+import { useAuth } from "../../contexts/AuthContext.jsx";
+import { doc, setDoc, arrayUnion, arrayRemove } from "firebase/firestore";
+import { db } from "../../firebase.js";
 
-function MovieCard({ movie, onSelectMovie }) {
+export const toggleFavoriteMovie = async (userId, movie, isFavorite) => {
+  if (!userId) return;
+  const userRef = doc(db, "users", userId);
+  if (isFavorite) {
+    await setDoc(userRef, { favorites: arrayRemove(movie) }, { merge: true });
+  } else {
+    await setDoc(userRef, { favorites: arrayUnion(movie) }, { merge: true });
+  }
+};
+
+function MovieCard({ movie, onSelectMovie, onBookMovie, onRequireAuth }) {
+  const { user, currentUser } = useAuth();
+  const activeUser = user || currentUser;
   const { isFavorite, addToFavorites, removeFromFavorites } = useMovieContext();
   const favorite = isFavorite(movie.id);
 
+  // Helper function to check if the movie was released within 30 days (1 month)
+  const isMovieActiveInTheaters = (releaseDateStr) => {
+    if (!releaseDateStr) return true;
+    const releaseDate = new Date(releaseDateStr);
+    const now = new Date();
+
+    const diffTime = now - releaseDate;
+    const diffDays = diffTime / (1000 * 60 * 60 * 24);
+
+    return diffDays >= 0 && diffDays <= 30;
+  };
+
+  const isAvailableForTickets = isMovieActiveInTheaters(movie.release_date);
+
+  // Helper to format release_date to Full Date (e.g., "Oct 24, 2024")
+  const formatFullDate = (dateStr) => {
+    if (!dateStr) return "N/A";
+    const dateObj = new Date(dateStr);
+    if (isNaN(dateObj.getTime())) return dateStr;
+
+    return dateObj.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  };
+
   function onFavoriteClick(e) {
     e.stopPropagation();
+    if (!activeUser) {
+      if (typeof onRequireAuth === "function") {
+        onRequireAuth();
+      } else {
+        alert("Please sign in to add movies to your favorites.");
+      }
+      return;
+    }
+
     if (favorite) {
       removeFromFavorites(movie.id);
     } else {
       addToFavorites(movie);
     }
   }
+
+  const handleTicketClick = (e) => {
+    e.stopPropagation();
+    if (!isAvailableForTickets) return;
+
+    if (!activeUser) {
+      if (typeof onRequireAuth === "function") {
+        onRequireAuth();
+      } else {
+        alert("Please sign in to purchase tickets.");
+      }
+      return;
+    }
+
+    if (onBookMovie) {
+      onBookMovie(movie);
+    }
+  };
 
   const posterUrl = movie.poster_path
     ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
@@ -36,7 +105,6 @@ function MovieCard({ movie, onSelectMovie }) {
           </div>
         )}
 
-        {/* Favorite Button (z-20 keeps it above overlays) */}
         <button
           type="button"
           onClick={onFavoriteClick}
@@ -48,9 +116,21 @@ function MovieCard({ movie, onSelectMovie }) {
           {favorite ? "♥" : "♡"}
         </button>
 
-        {/* Play Trailer Overlay (pointer-events-none lets clicks pass through to the heart) */}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4 pointer-events-none">
-          <span className="text-xs font-bold text-amber-400 bg-amber-950/80 border border-amber-500/40 px-3 py-1.5 rounded-lg w-full text-center backdrop-blur-sm pointer-events-auto">
+        {/* Hover Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3 gap-2">
+          {isAvailableForTickets ? (
+            <button
+              onClick={handleTicketClick}
+              className="text-xs font-bold text-zinc-950 bg-amber-500 hover:bg-amber-400 py-2 rounded-lg text-center shadow-md transition"
+            >
+              🎟️ Get Tickets
+            </button>
+          ) : (
+            <div className="text-xs font-semibold text-rose-400 bg-zinc-900/90 border border-rose-500/20 py-2 rounded-lg text-center backdrop-blur-sm">
+              🚫 Out of Theaters
+            </div>
+          )}
+          <span className="text-[11px] font-semibold text-zinc-300 bg-zinc-900/80 py-1.5 rounded-lg text-center backdrop-blur-sm">
             ▶ Play Trailer
           </span>
         </div>
@@ -61,7 +141,7 @@ function MovieCard({ movie, onSelectMovie }) {
           {movie.title}
         </h3>
         <p className="text-xs text-zinc-400 mt-1">
-          {movie.release_date?.split("-")[0] || "N/A"}
+          {formatFullDate(movie.release_date)}
         </p>
       </div>
     </div>

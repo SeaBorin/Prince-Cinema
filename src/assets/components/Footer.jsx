@@ -41,6 +41,11 @@ function Footer() {
                 Services
               </Link>
             </li>
+            <li>
+              <Link to="/profile" className="hover:text-amber-400 transition">
+                Profile
+              </Link>
+            </li>
           </ul>
         </div>
 

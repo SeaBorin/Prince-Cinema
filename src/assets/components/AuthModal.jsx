@@ -6,7 +6,9 @@ function AuthModal({ isOpen, onClose }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const { login, signup, loginWithGoogle } = useAuth();
+
+  // Safe destructuring prevents white screen crashes
+  const { login, signup, loginWithGoogle } = useAuth() || {};
 
   if (!isOpen) return null;
 
@@ -15,9 +17,9 @@ function AuthModal({ isOpen, onClose }) {
     setError("");
     try {
       if (isRegister) {
-        await signup(email, password);
+        if (signup) await signup(email, password);
       } else {
-        await login(email, password);
+        if (login) await login(email, password);
       }
       onClose();
     } catch (err) {
@@ -27,7 +29,7 @@ function AuthModal({ isOpen, onClose }) {
 
   const handleGoogleSignIn = async () => {
     try {
-      await loginWithGoogle();
+      if (loginWithGoogle) await loginWithGoogle();
       onClose();
     } catch (err) {
       setError(err.message);

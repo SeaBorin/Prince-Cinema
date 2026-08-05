@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import {
-  auth, // <-- Changed Auth to auth
+  auth,
   googleProvider,
   signInWithPopup,
   createUserWithEmailAndPassword,
@@ -18,7 +18,6 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Changed Auth to auth
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setLoading(false);
@@ -26,7 +25,6 @@ export const AuthProvider = ({ children }) => {
     return () => unsubscribe();
   }, []);
 
-  // Changed Auth to auth in all functions below
   const signup = (email, password) =>
     createUserWithEmailAndPassword(auth, email, password);
 
