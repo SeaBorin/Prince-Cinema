@@ -1,6 +1,6 @@
 // F:\react-course\react-app-two\prince-cinema-app\src\data\cinemaData.js
 
-import { getDynamicShowtimes } from "../utils/timeUtils.js";
+import { getDynamicShowtimes } from "../services/utils/timeUtils.js";
 
 export const CAMBODIA_BRANCHES = [
   {

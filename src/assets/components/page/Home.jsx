@@ -1,5 +1,3 @@
-// src/assets/components/page/Home.jsx
-
 import React, { useState, useEffect } from "react";
 import { getPopularMovies, searchMovies } from "../../../services/api";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -11,9 +9,8 @@ import MovieModal from "../MovieModal";
 import BookingModal from "../BookingModal";
 import PaymentModal from "../PaymentModal";
 import TicketModal from "../TicketModal";
-import AuthModal from "../AuthModal";
 
-function Home() {
+function Home({ onRequireAuth }) {
   const { user, currentUser } = useAuth();
   const activeUser = user || currentUser;
 
@@ -21,9 +18,6 @@ function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [bookingMovie, setBookingMovie] = useState(null);
-
-  // Modal Auth Trigger State
-  const [isAuthOpen, setIsAuthOpen] = useState(false);
 
   // Payment and Ticket States
   const [pendingBooking, setPendingBooking] = useState(null);
@@ -35,7 +29,7 @@ function Home() {
     return [...movieList].sort((a, b) => {
       const dateA = a.release_date ? new Date(a.release_date) : new Date(0);
       const dateB = b.release_date ? new Date(b.release_date) : new Date(0);
-      return dateB - dateA; // Newest date comes first
+      return dateB - dateA;
     });
   };
 
@@ -68,22 +62,33 @@ function Home() {
   };
 
   const handleBookMovie = (movie) => {
-    // 🔒 RESTRICT GUEST ACCOUNTS: Force sign-in if not authenticated
-    if (!activeUser) {
-      setIsAuthOpen(true);
+    if (!activeUser && onRequireAuth) {
+      onRequireAuth();
       return;
     }
     setBookingMovie(movie);
   };
 
+  // Proceed to payment — keep bookingMovie set so we can go back to it
   const handleProceedToPayment = (bookingData) => {
-    setBookingMovie(null);
     setPendingBooking(bookingData);
   };
 
-  // Save successful order directly to Firestore under user subcollection
+  // Cancel button inside PaymentModal — just close payment,
+  // BookingModal reopens automatically with seats still selected
+  const handleCancelPayment = () => {
+    setPendingBooking(null);
+  };
+
+  // "X" close on PaymentModal — fully cancel the booking
+  const handleClosePayment = () => {
+    setPendingBooking(null);
+    setBookingMovie(null);
+  };
+
   const handlePaymentSuccess = async (paidBooking) => {
     setPendingBooking(null);
+    setBookingMovie(null);
     setConfirmedBooking(paidBooking);
 
     if (activeUser) {
@@ -99,6 +104,20 @@ function Home() {
           createdAt: serverTimestamp(),
           status: "CONFIRMED",
         });
+
+        // Mark these seats as taken for this specific showtime so
+        // BookingModal's real-time listener disables them for everyone
+        const showBookingsRef = collection(
+          db,
+          "shows",
+          paidBooking.showId,
+          "bookings",
+        );
+        await addDoc(showBookingsRef, {
+          seats: paidBooking.seats,
+          userId: activeUser.uid,
+          createdAt: serverTimestamp(),
+        });
       } catch (error) {
         console.error("Error saving booking to Firestore:", error);
       }
@@ -106,7 +125,7 @@ function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white p-6 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-zinc-950 text-white p-6 max-w-7xl mx-auto space-y-8">
       {movies.length > 0 && (
         <HeroBanner
           movie={movies[0]}
@@ -115,41 +134,43 @@ function Home() {
       )}
 
       {/* Search Bar */}
-      <form onSubmit={handleSearch} className="mb-8 flex gap-3">
+      <form onSubmit={handleSearch} className="flex gap-3">
         <input
           type="text"
           placeholder="Search movies now showing in Cambodia..."
-          className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500 text-white"
+          className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-amber-500 text-white"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
         <button
           type="submit"
-          className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-xl text-sm transition"
+          className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-xl text-xs transition cursor-pointer"
         >
           Search
         </button>
       </form>
 
       {/* Movie Grid */}
-      <h2 className="text-xl font-bold mb-4 text-zinc-200">Now Showing</h2>
-      {loading ? (
-        <p className="text-zinc-500 text-sm">Loading movies...</p>
-      ) : movies.length === 0 ? (
-        <p className="text-zinc-400 text-sm">No movies found.</p>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {movies.map((movie) => (
-            <MovieCard
-              key={movie.id}
-              movie={movie}
-              onSelectMovie={(m) => setSelectedMovie(m)}
-              onBookMovie={handleBookMovie}
-              onRequireAuth={() => setIsAuthOpen(true)}
-            />
-          ))}
-        </div>
-      )}
+      <div>
+        <h2 className="text-xl font-bold mb-4 text-zinc-200">Now Showing</h2>
+        {loading ? (
+          <p className="text-zinc-500 text-sm">Loading movies...</p>
+        ) : movies.length === 0 ? (
+          <p className="text-zinc-400 text-sm">No movies found.</p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {movies.map((movie) => (
+              <MovieCard
+                key={movie.id}
+                movie={movie}
+                onSelectMovie={(m) => setSelectedMovie(m)}
+                onBookMovie={handleBookMovie}
+                onRequireAuth={onRequireAuth}
+              />
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Modals */}
       <MovieModal
@@ -157,27 +178,22 @@ function Home() {
         onClose={() => setSelectedMovie(null)}
       />
 
-      {/* 1. Seat & Food Selection */}
       <BookingModal
         movie={bookingMovie}
-        isOpen={Boolean(bookingMovie)}
+        isOpen={Boolean(bookingMovie) && !pendingBooking}
         onClose={() => setBookingMovie(null)}
         onProceedToPayment={handleProceedToPayment}
-        onRequireAuth={() => setIsAuthOpen(true)}
+        onRequireAuth={onRequireAuth}
       />
 
-      {/* Auth Modal Triggered when not signed in */}
-      <AuthModal isOpen={isAuthOpen} onClose={() => setIsAuthOpen(false)} />
-
-      {/* 2. KHQR / ABA Payment Modal */}
       <PaymentModal
         booking={pendingBooking}
         isOpen={Boolean(pendingBooking)}
-        onClose={() => setPendingBooking(null)}
+        onClose={handleClosePayment}
+        onBack={handleCancelPayment}
         onPaymentSuccess={handlePaymentSuccess}
       />
 
-      {/* 3. Confirmed Digital Ticket Pass */}
       <TicketModal
         booking={confirmedBooking}
         isOpen={Boolean(confirmedBooking)}

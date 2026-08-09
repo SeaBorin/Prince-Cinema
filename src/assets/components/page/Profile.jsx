@@ -7,11 +7,34 @@ import {
   onSnapshot,
   query,
   orderBy,
+  updateDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import TicketModal from "../TicketModal";
 
-// Dynamic ticket state helper
-function getTicketStatus(bookingItem, currentTime) {
+// Dynamic status helper — handles both movie tickets and food orders
+function getItemStatus(bookingItem, currentTime) {
+  // --- Food / Snack Orders ---
+  if (bookingItem.type === "food") {
+    if (bookingItem.pickedUp) {
+      return {
+        status: "PICKED_UP",
+        isExpired: true, // reused to mean "belongs in History tab"
+        badgeStyle: "bg-zinc-700/40 text-zinc-400 border border-zinc-600/40",
+        label: "PICKED UP",
+        countdownText: "Collected",
+      };
+    }
+    return {
+      status: "READY",
+      isExpired: false,
+      badgeStyle: "bg-amber-500/20 text-amber-400 border border-amber-500/40",
+      label: "AWAITING PICKUP",
+      countdownText: "Show this code at concessions",
+    };
+  }
+
+  // --- Movie Tickets ---
   let showtimeDate;
 
   if (bookingItem.showtimeTimestamp) {
@@ -76,7 +99,7 @@ function getTicketStatus(bookingItem, currentTime) {
 
 function Profile() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("tickets"); // 'tickets' | 'favorites' | 'history'
+  const [activeTab, setActiveTab] = useState("orders"); // 'orders' | 'favorites' | 'history'
   const [bookings, setBookings] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -93,7 +116,9 @@ function Profile() {
   useEffect(() => {
     if (!user) return;
 
-    // 1. Fetch User Booking History (Real-time)
+    // 1. Fetch User Booking History (Real-time) — includes both
+    // movie tickets and food orders, since both are saved to the
+    // same "bookings" subcollection.
     const bookingsRef = collection(db, "users", user.uid, "bookings");
     const q = query(bookingsRef, orderBy("createdAt", "desc"));
 
@@ -130,13 +155,27 @@ function Profile() {
     };
   }, [user]);
 
-  // Separate active/valid tickets from expired history tickets
-  const activeTickets = bookings.filter(
-    (item) => !getTicketStatus(item, now).isExpired,
+  // Separate active/valid orders from expired/picked-up history
+  const activeItems = bookings.filter(
+    (item) => !getItemStatus(item, now).isExpired,
   );
-  const historyTickets = bookings.filter(
-    (item) => getTicketStatus(item, now).isExpired,
+  const historyItems = bookings.filter(
+    (item) => getItemStatus(item, now).isExpired,
   );
+
+  // Mark a food order as picked up — moves it into the History tab
+  const handleMarkPickedUp = async (bookingDocId) => {
+    if (!user) return;
+    try {
+      const bookingRef = doc(db, "users", user.uid, "bookings", bookingDocId);
+      await updateDoc(bookingRef, {
+        pickedUp: true,
+        pickedUpAt: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error("Error marking snack order as picked up:", error);
+    }
+  };
 
   if (!user) {
     return (
@@ -169,14 +208,14 @@ function Profile() {
       {/* Tabs Navigation */}
       <div className="flex gap-6 border-b border-zinc-800 mb-6">
         <button
-          onClick={() => setActiveTab("tickets")}
+          onClick={() => setActiveTab("orders")}
           className={`pb-3 text-sm font-semibold transition relative ${
-            activeTab === "tickets"
+            activeTab === "orders"
               ? "text-amber-500 border-b-2 border-amber-500"
               : "text-zinc-400 hover:text-white"
           }`}
         >
-          My Tickets ({activeTickets.length})
+          My Order ({activeItems.length})
         </button>
         <button
           onClick={() => setActiveTab("favorites")}
@@ -196,22 +235,23 @@ function Profile() {
               : "text-zinc-400 hover:text-white"
           }`}
         >
-          History ({historyTickets.length})
+          History ({historyItems.length})
         </button>
       </div>
 
-      {/* Tab 1: Active Tickets */}
-      {activeTab === "tickets" && (
+      {/* Tab 1: My Order (active tickets + un-picked-up food orders) */}
+      {activeTab === "orders" && (
         <div className="space-y-4">
           {loading ? (
-            <p className="text-xs text-zinc-500">Loading tickets...</p>
-          ) : activeTickets.length === 0 ? (
+            <p className="text-xs text-zinc-500">Loading orders...</p>
+          ) : activeItems.length === 0 ? (
             <div className="text-center py-16 bg-zinc-900/40 border border-zinc-800 rounded-2xl">
-              <p className="text-zinc-400 text-sm">No active tickets found.</p>
+              <p className="text-zinc-400 text-sm">No active orders found.</p>
             </div>
           ) : (
-            activeTickets.map((item) => {
-              const statusInfo = getTicketStatus(item, now);
+            activeItems.map((item) => {
+              const statusInfo = getItemStatus(item, now);
+              const isFood = item.type === "food";
 
               return (
                 <div
@@ -221,7 +261,7 @@ function Profile() {
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded-md font-mono font-semibold">
-                        #{item.bookingId || item.id.slice(0, 8)}
+                        #{item.bookingId || item.orderId || item.id.slice(0, 8)}
                       </span>
 
                       <span
@@ -231,28 +271,40 @@ function Profile() {
                       </span>
 
                       <span className="text-[11px] font-mono text-zinc-400 bg-zinc-800/80 px-2 py-0.5 rounded-md border border-zinc-700/60 flex items-center gap-1">
-                        ⏱️ {statusInfo.countdownText}
+                        {isFood ? "🍿" : "⏱️"} {statusInfo.countdownText}
                       </span>
                     </div>
 
                     <h3 className="text-lg font-extrabold text-white">
-                      {item.movieTitle}
+                      {isFood ? "Snack Pass Order" : item.movieTitle}
                     </h3>
 
-                    <p className="text-xs text-zinc-400">
-                      {item.branch || "Prince Cinema"} • {item.format || "2D"} •{" "}
-                      <span className="text-amber-400 font-semibold">
-                        {item.date ? `${item.date}, ` : ""}
-                        {item.showtime}
-                      </span>
-                    </p>
-
-                    <p className="text-xs text-zinc-300">
-                      Seats:{" "}
-                      <span className="font-mono text-amber-400 font-bold">
-                        {item.seats?.join(", ")}
-                      </span>
-                    </p>
+                    {isFood ? (
+                      <p className="text-xs text-zinc-300">
+                        {item.items?.length || 0} item
+                        {item.items?.length === 1 ? "" : "s"}:{" "}
+                        <span className="font-mono text-amber-400">
+                          {item.items?.map((i) => i.name).join(", ")}
+                        </span>
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-xs text-zinc-400">
+                          {item.branch || "Prince Cinema"} •{" "}
+                          {item.format || "2D"} •{" "}
+                          <span className="text-amber-400 font-semibold">
+                            {item.date ? `${item.date}, ` : ""}
+                            {item.showtime}
+                          </span>
+                        </p>
+                        <p className="text-xs text-zinc-300">
+                          Seats:{" "}
+                          <span className="font-mono text-amber-400 font-bold">
+                            {item.seats?.join(", ")}
+                          </span>
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   <div className="text-right w-full sm:w-auto flex sm:flex-col justify-between items-center sm:items-end border-t sm:border-t-0 border-zinc-800 pt-3 sm:pt-0 gap-3">
@@ -268,12 +320,23 @@ function Profile() {
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => setSelectedTicket(item)}
-                      className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 shadow-lg shadow-amber-500/20 transition"
-                    >
-                      View Ticket Pass
-                    </button>
+                    <div className="flex sm:flex-col gap-2">
+                      <button
+                        onClick={() => setSelectedTicket(item)}
+                        className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-500 hover:bg-amber-600 text-zinc-950 shadow-lg shadow-amber-500/20 transition"
+                      >
+                        {isFood ? "View Order Pass" : "View Ticket Pass"}
+                      </button>
+
+                      {isFood && (
+                        <button
+                          onClick={() => handleMarkPickedUp(item.id)}
+                          className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg transition"
+                        >
+                          Mark as Picked Up
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -313,20 +376,19 @@ function Profile() {
         </div>
       )}
 
-      {/* Tab 3: Expired Ticket History */}
+      {/* Tab 3: History (expired tickets + picked-up food orders) */}
       {activeTab === "history" && (
         <div className="space-y-4">
           {loading ? (
             <p className="text-xs text-zinc-500">Loading history...</p>
-          ) : historyTickets.length === 0 ? (
+          ) : historyItems.length === 0 ? (
             <div className="text-center py-16 bg-zinc-900/40 border border-zinc-800 rounded-2xl">
-              <p className="text-zinc-400 text-sm">
-                No expired ticket history.
-              </p>
+              <p className="text-zinc-400 text-sm">No order history yet.</p>
             </div>
           ) : (
-            historyTickets.map((item) => {
-              const statusInfo = getTicketStatus(item, now);
+            historyItems.map((item) => {
+              const statusInfo = getItemStatus(item, now);
+              const isFood = item.type === "food";
 
               return (
                 <div
@@ -336,7 +398,7 @@ function Profile() {
                   <div className="space-y-1.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs px-2 py-0.5 bg-amber-500/10 text-amber-400 rounded-md font-mono font-semibold">
-                        #{item.bookingId || item.id.slice(0, 8)}
+                        #{item.bookingId || item.orderId || item.id.slice(0, 8)}
                       </span>
 
                       <span
@@ -347,23 +409,35 @@ function Profile() {
                     </div>
 
                     <h3 className="text-lg font-extrabold text-white line-through text-zinc-400">
-                      {item.movieTitle}
+                      {isFood ? "Snack Pass Order" : item.movieTitle}
                     </h3>
 
-                    <p className="text-xs text-zinc-400">
-                      {item.branch || "Prince Cinema"} • {item.format || "2D"} •{" "}
-                      <span className="text-zinc-400">
-                        {item.date ? `${item.date}, ` : ""}
-                        {item.showtime}
-                      </span>
-                    </p>
-
-                    <p className="text-xs text-zinc-400">
-                      Seats:{" "}
-                      <span className="font-mono font-bold text-zinc-300">
-                        {item.seats?.join(", ")}
-                      </span>
-                    </p>
+                    {isFood ? (
+                      <p className="text-xs text-zinc-400">
+                        {item.items?.length || 0} item
+                        {item.items?.length === 1 ? "" : "s"}:{" "}
+                        <span className="font-mono text-zinc-300">
+                          {item.items?.map((i) => i.name).join(", ")}
+                        </span>
+                      </p>
+                    ) : (
+                      <>
+                        <p className="text-xs text-zinc-400">
+                          {item.branch || "Prince Cinema"} •{" "}
+                          {item.format || "2D"} •{" "}
+                          <span className="text-zinc-400">
+                            {item.date ? `${item.date}, ` : ""}
+                            {item.showtime}
+                          </span>
+                        </p>
+                        <p className="text-xs text-zinc-400">
+                          Seats:{" "}
+                          <span className="font-mono font-bold text-zinc-300">
+                            {item.seats?.join(", ")}
+                          </span>
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   <div className="text-right w-full sm:w-auto flex sm:flex-col justify-between items-center sm:items-end border-t sm:border-t-0 border-zinc-800 pt-3 sm:pt-0 gap-3">
@@ -383,7 +457,7 @@ function Profile() {
                       disabled
                       className="px-4 py-2 text-xs font-bold rounded-xl bg-zinc-800 text-zinc-600 cursor-not-allowed border border-zinc-700/40"
                     >
-                      Pass Expired
+                      {isFood ? "Collected" : "Pass Expired"}
                     </button>
                   </div>
                 </div>
@@ -393,7 +467,7 @@ function Profile() {
         </div>
       )}
 
-      {/* Ticket Pass Modal */}
+      {/* Ticket / Order Pass Modal */}
       {selectedTicket && (
         <TicketModal
           booking={selectedTicket}
