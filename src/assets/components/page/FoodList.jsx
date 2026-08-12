@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { db } from "../../../firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import FoodCard from "../FoodCard";
 import PaymentModal from "../PaymentModal";
 
@@ -60,8 +60,6 @@ export default function FoodList({ onRequireAuth }) {
 
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [cart, setCart] = useState([]);
-
-  // Snack payment flow state
   const [pendingOrder, setPendingOrder] = useState(null);
 
   const categories = ["All", "Popcorn", "Combos", "Beverages", "Snacks"];
@@ -94,8 +92,6 @@ export default function FoodList({ onRequireAuth }) {
   const handleConfirmSnackPass = () => {
     if (cart.length === 0) return;
 
-    // Snack orders must be tied to an account so they persist
-    // in the user's "My Order" history across logins/devices
     if (!activeUser) {
       if (typeof onRequireAuth === "function") {
         onRequireAuth();
@@ -117,13 +113,10 @@ export default function FoodList({ onRequireAuth }) {
     setPendingOrder(orderData);
   };
 
-  // "Cancel" button inside PaymentModal — go back to the cart, cart stays intact
   const handleCancelOrderPayment = () => {
     setPendingOrder(null);
   };
 
-  // "✕" close on PaymentModal — same behavior here since there's no
-  // separate seat-selection step to preserve; cart is untouched either way
   const handleCloseOrderPayment = () => {
     setPendingOrder(null);
   };
@@ -134,14 +127,14 @@ export default function FoodList({ onRequireAuth }) {
 
     if (activeUser) {
       try {
-        const userBookingsRef = collection(
-          db,
-          "users",
-          activeUser.uid,
-          "bookings",
-        );
-        await addDoc(userBookingsRef, {
+        // Use the order code as the document ID so staff can look it
+        // up directly at the snack counter
+        const referenceCode = paidOrder.orderId || `SNACK-${Date.now()}`;
+
+        const orderRef = doc(db, "bookings", referenceCode);
+        await setDoc(orderRef, {
           ...paidOrder,
+          uid: activeUser.uid,
           pickedUp: false,
           createdAt: serverTimestamp(),
           status: "CONFIRMED",
@@ -154,7 +147,6 @@ export default function FoodList({ onRequireAuth }) {
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 py-8 min-h-[80vh] text-zinc-100 space-y-8">
-      {/* Page Header */}
       <div className="border-b border-zinc-800 pb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black text-white flex items-center gap-3">
@@ -167,7 +159,6 @@ export default function FoodList({ onRequireAuth }) {
           </p>
         </div>
 
-        {/* Category Filters */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           {categories.map((cat) => (
             <button
@@ -187,14 +178,12 @@ export default function FoodList({ onRequireAuth }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Food Items Grid */}
         <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
           {filteredItems.map((item) => (
             <FoodCard key={item.id} item={item} onAddToCart={handleAddToCart} />
           ))}
         </div>
 
-        {/* Snack Pass Order Summary Sidebar */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 h-fit space-y-4 sticky top-28">
           <h2 className="text-sm font-bold text-white border-b border-zinc-800 pb-3 flex items-center justify-between">
             <span>Snack Pass Order</span>
@@ -259,7 +248,6 @@ export default function FoodList({ onRequireAuth }) {
         </div>
       </div>
 
-      {/* Payment Modal for Snack Orders */}
       <PaymentModal
         booking={pendingOrder}
         isOpen={Boolean(pendingOrder)}

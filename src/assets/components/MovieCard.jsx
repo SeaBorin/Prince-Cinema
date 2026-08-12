@@ -83,6 +83,13 @@ function MovieCard({ movie, onSelectMovie, onBookMovie, onRequireAuth }) {
     }
   };
 
+  const handleTrailerClick = (e) => {
+    e.stopPropagation();
+    if (onSelectMovie) {
+      onSelectMovie(movie);
+    }
+  };
+
   const posterUrl = movie.poster_path
     ? `https://image.tmdb.org/t/p/w500${movie.poster_path}`
     : "https://via.placeholder.com/500x750?text=No+Poster";
@@ -116,23 +123,36 @@ function MovieCard({ movie, onSelectMovie, onBookMovie, onRequireAuth }) {
           {favorite ? "♥" : "♡"}
         </button>
 
-        {/* Hover Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3 gap-2">
+        {/*
+          Action Overlay — ALWAYS visible on mobile (no hover on touch
+          devices), fades in on hover only for desktop (md and up).
+          pointer-events-none when hidden prevents invisible buttons
+          from ever intercepting taps, even during the transition.
+        */}
+        <div
+          className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/50 to-transparent
+            opacity-100 pointer-events-auto
+            md:opacity-0 md:group-hover:opacity-100 md:pointer-events-none md:group-hover:pointer-events-auto
+            transition-opacity duration-300 flex flex-col justify-end p-3 gap-2"
+        >
           {isAvailableForTickets ? (
             <button
               onClick={handleTicketClick}
-              className="text-xs font-bold text-zinc-950 bg-amber-500 hover:bg-amber-400 py-2 rounded-lg text-center shadow-md transition"
+              className="text-xs font-bold text-zinc-950 bg-amber-500 hover:bg-amber-400 py-2.5 rounded-lg text-center shadow-md transition active:scale-95"
             >
               🎟️ Get Tickets
             </button>
           ) : (
-            <div className="text-xs font-semibold text-rose-400 bg-zinc-900/90 border border-rose-500/20 py-2 rounded-lg text-center backdrop-blur-sm">
+            <div className="text-xs font-semibold text-rose-400 bg-zinc-900/90 border border-rose-500/20 py-2.5 rounded-lg text-center backdrop-blur-sm">
               🚫 Out of Theaters
             </div>
           )}
-          <span className="text-[11px] font-semibold text-zinc-300 bg-zinc-900/80 py-1.5 rounded-lg text-center backdrop-blur-sm">
+          <button
+            onClick={handleTrailerClick}
+            className="text-[11px] font-semibold text-zinc-100 bg-zinc-800/90 hover:bg-zinc-700/90 py-2 rounded-lg text-center backdrop-blur-sm transition active:scale-95"
+          >
             ▶ Play Trailer
-          </span>
+          </button>
         </div>
       </div>
 

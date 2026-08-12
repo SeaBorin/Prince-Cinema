@@ -2,7 +2,13 @@ import React, { useState, useEffect } from "react";
 import { getPopularMovies, searchMovies } from "../../../services/api";
 import { useAuth } from "../../../contexts/AuthContext";
 import { db } from "../../../firebase";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  doc,
+  setDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 import MovieCard from "../MovieCard";
 import HeroBanner from "../HeroBanner";
 import MovieModal from "../MovieModal";
@@ -19,12 +25,10 @@ function Home({ onRequireAuth }) {
   const [selectedMovie, setSelectedMovie] = useState(null);
   const [bookingMovie, setBookingMovie] = useState(null);
 
-  // Payment and Ticket States
   const [pendingBooking, setPendingBooking] = useState(null);
   const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Sorts ALL movies by release_date so newest releases show first
   const processMovies = (movieList) => {
     return [...movieList].sort((a, b) => {
       const dateA = a.release_date ? new Date(a.release_date) : new Date(0);
@@ -69,18 +73,14 @@ function Home({ onRequireAuth }) {
     setBookingMovie(movie);
   };
 
-  // Proceed to payment — keep bookingMovie set so we can go back to it
   const handleProceedToPayment = (bookingData) => {
     setPendingBooking(bookingData);
   };
 
-  // Cancel button inside PaymentModal — just close payment,
-  // BookingModal reopens automatically with seats still selected
   const handleCancelPayment = () => {
     setPendingBooking(null);
   };
 
-  // "X" close on PaymentModal — fully cancel the booking
   const handleClosePayment = () => {
     setPendingBooking(null);
     setBookingMovie(null);
@@ -93,14 +93,16 @@ function Home({ onRequireAuth }) {
 
     if (activeUser) {
       try {
-        const userBookingsRef = collection(
-          db,
-          "users",
-          activeUser.uid,
-          "bookings",
-        );
-        await addDoc(userBookingsRef, {
+        // Use the human-readable booking code as the document ID so
+        // staff can look it up directly when scanning at the door
+        const referenceCode = paidBooking.bookingId || `TICKET-${Date.now()}`;
+
+        const bookingRef = doc(db, "bookings", referenceCode);
+        await setDoc(bookingRef, {
           ...paidBooking,
+          type: "ticket",
+          uid: activeUser.uid,
+          checkedIn: false,
           createdAt: serverTimestamp(),
           status: "CONFIRMED",
         });
@@ -133,7 +135,6 @@ function Home({ onRequireAuth }) {
         />
       )}
 
-      {/* Search Bar */}
       <form onSubmit={handleSearch} className="flex gap-3">
         <input
           type="text"
@@ -150,7 +151,6 @@ function Home({ onRequireAuth }) {
         </button>
       </form>
 
-      {/* Movie Grid */}
       <div>
         <h2 className="text-xl font-bold mb-4 text-zinc-200">Now Showing</h2>
         {loading ? (
@@ -172,7 +172,6 @@ function Home({ onRequireAuth }) {
         )}
       </div>
 
-      {/* Modals */}
       <MovieModal
         movie={selectedMovie}
         onClose={() => setSelectedMovie(null)}

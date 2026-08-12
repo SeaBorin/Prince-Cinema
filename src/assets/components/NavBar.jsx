@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { auth } from "../../firebase";
@@ -9,11 +9,14 @@ export default function NavBar({ onOpenAuthModal }) {
   const authContext = useAuth() || {};
 
   const contextUser = authContext.currentUser || authContext.user;
+  const role = authContext.role;
   const [firebaseUser, setFirebaseUser] = useState(auth?.currentUser || null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
 
   const location = useLocation();
   const navigate = useNavigate();
+  const accountRef = useRef(null);
 
   useEffect(() => {
     if (!auth) return;
@@ -22,6 +25,23 @@ export default function NavBar({ onOpenAuthModal }) {
     });
     return () => unsubscribe();
   }, []);
+
+  // Close the account dropdown when clicking anywhere outside it
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (accountRef.current && !accountRef.current.contains(e.target)) {
+        setIsAccountOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Close dropdown on route change
+  useEffect(() => {
+    setIsAccountOpen(false);
+    setIsMenuOpen(false);
+  }, [location.pathname]);
 
   const activeUser = contextUser || firebaseUser;
 
@@ -46,10 +66,25 @@ export default function NavBar({ onOpenAuthModal }) {
     { name: "Favorites", path: "/favorites" },
     { name: "Services", path: "/services" },
     { name: "About", path: "/about" },
-    { name: "Profile", path: "/profile" },
+  ];
+
+  const isStaffRole =
+    role === "staff" || role === "manager" || role === "admin";
+  const isAdminRole = role === "admin";
+
+  const accountLinks = [
+    { name: "Profile", path: "/profile", icon: "👤" },
+    ...(isStaffRole
+      ? [{ name: "Staff Check-In", path: "/staff-checkin", icon: "🎟️" }]
+      : []),
+    ...(isAdminRole
+      ? [{ name: "Manage Users", path: "/admin-users", icon: "⚙️" }]
+      : []),
   ];
 
   const isActive = (path) => location.pathname === path;
+
+  const initials = activeUser?.email ? activeUser.email[0].toUpperCase() : "U";
 
   return (
     <header className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/80">
@@ -81,19 +116,91 @@ export default function NavBar({ onOpenAuthModal }) {
         </nav>
 
         {/* Auth Actions */}
-        <div className="hidden md:flex items-center gap-4">
+        <div className="hidden md:flex items-center gap-3">
           {activeUser ? (
-            <div className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 p-1.5 pl-4 rounded-full">
-              <span className="text-xs font-semibold text-zinc-300 flex items-center gap-2 max-w-[180px] truncate">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0"></span>
-                {activeUser.email || activeUser.displayName || "User"}
-              </span>
+            <div className="relative" ref={accountRef}>
               <button
-                onClick={handleLogout}
-                className="px-4 py-2 text-xs font-bold rounded-full bg-amber-500 text-zinc-950 hover:bg-amber-400 transition-all shadow-md shadow-amber-500/10 cursor-pointer"
+                onClick={() => setIsAccountOpen((prev) => !prev)}
+                className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 p-1.5 pl-2 rounded-full transition cursor-pointer"
               >
-                Sign Out
+                <span className="w-8 h-8 rounded-full bg-amber-500 text-zinc-950 flex items-center justify-center text-xs font-black shrink-0">
+                  {initials}
+                </span>
+                <span className="text-xs font-semibold text-zinc-300 max-w-[140px] truncate">
+                  {activeUser.email || activeUser.displayName || "User"}
+                </span>
+                {role && role !== "customer" && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold uppercase tracking-wide shrink-0">
+                    {role}
+                  </span>
+                )}
+                <svg
+                  className={`w-3.5 h-3.5 text-zinc-500 mr-1.5 transition-transform duration-200 ${
+                    isAccountOpen ? "rotate-180" : ""
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
               </button>
+
+              {/* Dropdown Menu */}
+              {isAccountOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/40 overflow-hidden py-2 z-50">
+                  <div className="px-4 py-2 border-b border-zinc-800 mb-1">
+                    <p className="text-xs font-semibold text-zinc-200 truncate">
+                      {activeUser.email}
+                    </p>
+                    {role && (
+                      <span
+                        className={`inline-block mt-1 text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-wide ${
+                          role === "admin"
+                            ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                            : role === "manager"
+                              ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                              : role === "staff"
+                                ? "bg-sky-500/20 text-sky-400 border border-sky-500/30"
+                                : "bg-zinc-700/40 text-zinc-400 border border-zinc-600/40"
+                        }`}
+                      >
+                        {role}
+                      </span>
+                    )}
+                  </div>
+
+                  {accountLinks.map((link) => (
+                    <Link
+                      key={link.path}
+                      to={link.path}
+                      className={`flex items-center gap-2.5 px-4 py-2.5 text-xs font-medium transition ${
+                        isActive(link.path)
+                          ? "bg-amber-500/10 text-amber-400"
+                          : "text-zinc-300 hover:bg-zinc-800/70 hover:text-white"
+                      }`}
+                    >
+                      <span>{link.icon}</span>
+                      {link.name}
+                    </Link>
+                  ))}
+
+                  <div className="border-t border-zinc-800 mt-1 pt-1">
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-xs font-bold text-rose-400 hover:bg-rose-500/10 transition cursor-pointer"
+                    >
+                      <span>🚪</span>
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <button
@@ -153,13 +260,45 @@ export default function NavBar({ onOpenAuthModal }) {
             </Link>
           ))}
 
+          {activeUser && accountLinks.length > 0 && (
+            <>
+              <div className="pt-2 border-t border-zinc-800" />
+              {accountLinks.map((link) => (
+                <Link
+                  key={link.path}
+                  to={link.path}
+                  onClick={() => setIsMenuOpen(false)}
+                  className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-base font-medium ${
+                    isActive(link.path)
+                      ? "bg-amber-500 text-zinc-950 font-semibold"
+                      : "text-zinc-300 hover:bg-zinc-900"
+                  }`}
+                >
+                  <span>{link.icon}</span>
+                  {link.name}
+                </Link>
+              ))}
+            </>
+          )}
+
           <div className="pt-4 border-t border-zinc-800">
             {activeUser ? (
               <div className="space-y-3">
-                <p className="px-4 text-xs font-semibold text-zinc-400 truncate">
-                  Signed in as:{" "}
-                  <span className="text-amber-400">{activeUser.email}</span>
-                </p>
+                <div className="flex items-center gap-2 px-4">
+                  <span className="w-8 h-8 rounded-full bg-amber-500 text-zinc-950 flex items-center justify-center text-xs font-black shrink-0">
+                    {initials}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-zinc-200 truncate">
+                      {activeUser.email}
+                    </p>
+                    {role && role !== "customer" && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold uppercase tracking-wide">
+                        {role}
+                      </span>
+                    )}
+                  </div>
+                </div>
                 <button
                   onClick={() => {
                     handleLogout();
