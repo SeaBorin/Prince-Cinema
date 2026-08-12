@@ -1,5 +1,6 @@
 // src/assets/components/PaymentModal.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
+import { QRCodeSVG } from "qrcode.react";
 
 import abaLogo from "../aba_pay.png";
 import acledaLogo from "../aceleda.png";
@@ -8,32 +9,15 @@ import visaLogo from "../visacard.png";
 import mastercardLogo from "../mastercard.jpg";
 
 const PAYMENT_METHODS = [
-  {
-    id: "khqr",
-    label: "KHQR",
-    logo: khqrLogo,
-  },
-  {
-    id: "aba",
-    label: "ABA Pay",
-    logo: abaLogo,
-  },
-  {
-    id: "acleda",
-    label: "ACLEDA",
-    logo: acledaLogo,
-  },
-  {
-    id: "visa",
-    label: "Visa",
-    logo: visaLogo,
-  },
-  {
-    id: "mastercard",
-    label: "Mastercard",
-    logo: mastercardLogo,
-  },
+  { id: "khqr", label: "KHQR", logo: khqrLogo },
+  { id: "aba", label: "ABA Pay", logo: abaLogo },
+  { id: "acleda", label: "ACLEDA", logo: acledaLogo },
+  { id: "visa", label: "Visa", logo: visaLogo },
+  { id: "mastercard", label: "Mastercard", logo: mastercardLogo },
 ];
+
+const POLL_INTERVAL_MS = 3000;
+const QR_EXPIRY_MS = 10 * 60 * 1000; // Bakong's 10-minute guideline
 
 export default function PaymentModal({
   booking,
@@ -48,12 +32,17 @@ export default function PaymentModal({
   const [cardExpiry, setCardExpiry] = useState("");
   const [cardCvv, setCardCvv] = useState("");
 
-  if (!isOpen || !booking) return null;
-
-  const isFoodOrder = booking.type === "food";
+  // Real KHQR state
+  const [khqrString, setKhqrString] = useState(null);
+  const [khqrMd5, setKhqrMd5] = useState(null);
+  const [khqrLoading, setKhqrLoading] = useState(false);
+  const [khqrError, setKhqrError] = useState("");
+  const [khqrExpiresAt, setKhqrExpiresAt] = useState(null);
+  const pollTimerRef = useRef(null);
 
   const isCardMethod =
     selectedMethod === "visa" || selectedMethod === "mastercard";
+  const referenceCode = booking?.bookingId || booking?.orderId;
 
   const resetCardFields = () => {
     setCardNumber("");
@@ -61,25 +50,124 @@ export default function PaymentModal({
     setCardCvv("");
   };
 
-  const handleSelectMethod = (methodId) => {
-    setSelectedMethod(methodId);
-    resetCardFields();
+  const stopPolling = () => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
   };
 
-  const handleConfirmPayment = async () => {
-    setProcessing(true);
+  // Generate a real KHQR code the moment this modal opens with KHQR selected
+  useEffect(() => {
+    if (!isOpen || !booking || selectedMethod !== "khqr") return;
 
-    // Simulated payment delay — this is a sample/demo flow only.
-    // No real payment gateway is called; we just pretend the
-    // KHQR scan / card charge succeeded after a short delay.
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    let cancelled = false;
 
-    setProcessing(false);
+    const generateQr = async () => {
+      setKhqrLoading(true);
+      setKhqrError("");
+      setKhqrString(null);
+      setKhqrMd5(null);
 
+      try {
+        const res = await fetch("/api/generate-khqr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: booking.totalAmount,
+            billNumber: referenceCode,
+            currency: "USD",
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.qr) {
+          throw new Error(data.error || "Failed to generate QR");
+        }
+
+        if (cancelled) return;
+
+        setKhqrString(data.qr);
+        setKhqrMd5(data.md5);
+        setKhqrExpiresAt(Date.now() + QR_EXPIRY_MS);
+      } catch (err) {
+        if (!cancelled) {
+          console.error(err);
+          setKhqrError(
+            "Could not generate the KHQR code. Please try again or choose a different method.",
+          );
+        }
+      } finally {
+        if (!cancelled) setKhqrLoading(false);
+      }
+    };
+
+    generateQr();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, booking, selectedMethod, referenceCode]);
+
+  // Poll for real payment confirmation once we have an MD5 to check
+  useEffect(() => {
+    if (!khqrMd5 || selectedMethod !== "khqr") {
+      stopPolling();
+      return;
+    }
+
+    pollTimerRef.current = setInterval(async () => {
+      // Stop polling once the QR has expired
+      if (khqrExpiresAt && Date.now() > khqrExpiresAt) {
+        stopPolling();
+        setKhqrError("This QR code has expired. Please generate a new one.");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/check-khqr-status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ md5: khqrMd5 }),
+        });
+        const data = await res.json();
+
+        if (data.paid) {
+          stopPolling();
+          finalizePayment("KHQR");
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => stopPolling();
+  }, [khqrMd5, khqrExpiresAt, selectedMethod]);
+
+  // Stop polling and reset KHQR state whenever the modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      stopPolling();
+      setKhqrString(null);
+      setKhqrMd5(null);
+      setKhqrError("");
+    }
+  }, [isOpen]);
+
+  if (!isOpen || !booking) return null;
+
+  const handleSelectMethod = (methodId) => {
+    stopPolling();
+    setSelectedMethod(methodId);
+    resetCardFields();
+    setKhqrError("");
+  };
+
+  const finalizePayment = (methodLabel) => {
     const paidBooking = {
       ...booking,
-      paymentMethod: PAYMENT_METHODS.find((m) => m.id === selectedMethod)
-        ?.label,
+      paymentMethod: methodLabel,
       paidAt: new Date().toISOString(),
       status: "PAID",
     };
@@ -89,10 +177,31 @@ export default function PaymentModal({
     }
   };
 
+  // For ABA / ACLEDA / Card — still simulated, since those need their own
+  // separate gateway integrations (not part of KHQR)
+  const handleConfirmSimulatedPayment = async () => {
+    setProcessing(true);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    setProcessing(false);
+
+    const methodLabel = PAYMENT_METHODS.find(
+      (m) => m.id === selectedMethod,
+    )?.label;
+    finalizePayment(methodLabel);
+  };
+
   const handleCancelClick = () => {
     if (processing) return;
+    stopPolling();
     if (typeof onBack === "function") {
       onBack();
+    }
+  };
+
+  const handleCloseClick = () => {
+    stopPolling();
+    if (typeof onClose === "function") {
+      onClose();
     }
   };
 
@@ -102,11 +211,9 @@ export default function PaymentModal({
       cardExpiry.length === 5 &&
       cardCvv.length >= 3);
 
-  const qrReferenceId = booking.bookingId || booking.orderId || "PENDING";
-
   return (
     <div
-      onClick={onClose}
+      onClick={handleCloseClick}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto"
     >
       <div
@@ -114,19 +221,17 @@ export default function PaymentModal({
         className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-2xl text-white my-8"
       >
         <button
-          onClick={onClose}
+          onClick={handleCloseClick}
           className="absolute top-4 right-4 text-zinc-400 hover:text-white"
         >
           ✕
         </button>
 
-        <h2 className="text-2xl font-bold mb-6 text-center">
-          {isFoodOrder ? "Confirm Snack Payment" : "Confirm Payment"}
-        </h2>
+        <h2 className="text-2xl font-bold mb-6 text-center">Confirm Payment</h2>
 
         {/* Order Summary */}
         <div className="space-y-2 text-xs bg-zinc-950 border border-zinc-800 rounded-xl p-4 mb-6">
-          {isFoodOrder ? (
+          {booking.type === "food" ? (
             <>
               <div className="max-h-40 overflow-y-auto space-y-2 pr-1 mb-1">
                 {booking.items?.map((item) => (
@@ -225,21 +330,37 @@ export default function PaymentModal({
           </div>
         </div>
 
-        {/* KHQR Simulated QR Code */}
+        {/* Real KHQR Code */}
         {selectedMethod === "khqr" && (
-          <div className="mb-6 flex flex-col items-center justify-center space-y-3 bg-white p-5 rounded-xl text-zinc-950">
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=KHQR-DEMO-${qrReferenceId}`}
-              alt="KHQR Payment Code"
-              className="w-40 h-40 object-contain"
-            />
-            <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest text-center">
-              Scan with ABA / ACLEDA / Wing / any KHQR-supported app
-            </p>
-            <p className="text-[10px] text-zinc-500 text-center">
-              (Demo only — no real bank connection. Click "Confirm & Pay" below
-              to simulate a completed scan.)
-            </p>
+          <div className="mb-6 flex flex-col items-center justify-center space-y-3 bg-white p-5 rounded-xl text-zinc-950 min-h-[220px]">
+            {khqrLoading ? (
+              <p className="text-xs text-zinc-600">
+                Generating your KHQR code...
+              </p>
+            ) : khqrError ? (
+              <div className="text-center space-y-2">
+                <p className="text-xs text-rose-600 font-semibold">
+                  {khqrError}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleSelectMethod("khqr")}
+                  className="text-xs underline text-zinc-600"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : khqrString ? (
+              <>
+                <QRCodeSVG value={khqrString} size={180} />
+                <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest text-center">
+                  Scan with ABA / ACLEDA / Wing / any KHQR-supported app
+                </p>
+                <p className="text-[10px] text-emerald-600 font-semibold text-center animate-pulse">
+                  Waiting for payment...
+                </p>
+              </>
+            ) : null}
           </div>
         )}
 
@@ -346,14 +467,18 @@ export default function PaymentModal({
           >
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={handleConfirmPayment}
-            disabled={processing || !isCardFormValid}
-            className="flex-[2] py-3 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-xl text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {processing ? "Processing..." : "Confirm & Pay"}
-          </button>
+
+          {/* KHQR has no "Confirm & Pay" button — payment is detected automatically via polling */}
+          {selectedMethod !== "khqr" && (
+            <button
+              type="button"
+              onClick={handleConfirmSimulatedPayment}
+              disabled={processing || !isCardFormValid}
+              className="flex-[2] py-3 bg-amber-500 hover:bg-amber-600 text-zinc-950 font-bold rounded-xl text-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {processing ? "Processing..." : "Confirm & Pay"}
+            </button>
+          )}
         </div>
       </div>
     </div>
