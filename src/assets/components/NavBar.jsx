@@ -26,7 +26,6 @@ export default function NavBar({ onOpenAuthModal }) {
     return () => unsubscribe();
   }, []);
 
-  // Close the account dropdown when clicking anywhere outside it
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (accountRef.current && !accountRef.current.contains(e.target)) {
@@ -37,7 +36,6 @@ export default function NavBar({ onOpenAuthModal }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Close dropdown on route change
   useEffect(() => {
     setIsAccountOpen(false);
     setIsMenuOpen(false);
@@ -78,7 +76,10 @@ export default function NavBar({ onOpenAuthModal }) {
       ? [{ name: "Staff Check-In", path: "/staff-checkin", icon: "🎟️" }]
       : []),
     ...(isAdminRole
-      ? [{ name: "Manage Users", path: "/admin-users", icon: "⚙️" }]
+      ? [
+          { name: "Dashboard", path: "/admin-dashboard", icon: "📊" },
+          { name: "Manage Users", path: "/admin-users", icon: "⚙️" },
+        ]
       : []),
   ];
 
@@ -89,7 +90,6 @@ export default function NavBar({ onOpenAuthModal }) {
   return (
     <header className="sticky top-0 z-40 bg-zinc-950/80 backdrop-blur-md border-b border-zinc-800/80">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-        {/* Brand Logo */}
         <Link to="/" className="flex items-center group">
           <img
             src={logoImg}
@@ -98,7 +98,6 @@ export default function NavBar({ onOpenAuthModal }) {
           />
         </Link>
 
-        {/* Navigation Links */}
         <nav className="hidden md:flex items-center gap-1 bg-zinc-900/60 p-1.5 rounded-full border border-zinc-800/60">
           {navLinks.map((link) => (
             <Link
@@ -115,7 +114,6 @@ export default function NavBar({ onOpenAuthModal }) {
           ))}
         </nav>
 
-        {/* Auth Actions */}
         <div className="hidden md:flex items-center gap-3">
           {activeUser ? (
             <div className="relative" ref={accountRef}>
@@ -151,7 +149,6 @@ export default function NavBar({ onOpenAuthModal }) {
                 </svg>
               </button>
 
-              {/* Dropdown Menu */}
               {isAccountOpen && (
                 <div className="absolute right-0 mt-2 w-56 bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl shadow-black/40 overflow-hidden py-2 z-50">
                   <div className="px-4 py-2 border-b border-zinc-800 mb-1">
@@ -212,7 +209,6 @@ export default function NavBar({ onOpenAuthModal }) {
           )}
         </div>
 
-        {/* Mobile Menu Toggle */}
         <button
           onClick={() => setIsMenuOpen(!isMenuOpen)}
           className="md:hidden p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-100 cursor-pointer"
@@ -242,7 +238,6 @@ export default function NavBar({ onOpenAuthModal }) {
         </button>
       </div>
 
-      {/* Mobile Dropdown Menu */}
       {isMenuOpen && (
         <div className="md:hidden bg-zinc-950 border-b border-zinc-800 px-4 pt-2 pb-6 space-y-3">
           {navLinks.map((link) => (

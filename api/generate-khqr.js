@@ -1,8 +1,6 @@
-// api/generate-khqr.js
-// Runs server-side only — your Bakong Account ID and token never reach the browser.
-const { BakongKHQR, khqrData, IndividualInfo } = require("bakong-khqr");
+import { BakongKHQR, khqrData, IndividualInfo } from "bakong-khqr";
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -33,12 +31,12 @@ module.exports = async (req, res) => {
       billNumber: String(billNumber),
       storeLabel: "Prince Cinema",
       terminalLabel: "Web Checkout",
-      // KHQR codes should time out — matches the 10-minute Bakong guideline
       expirationTimestamp: Date.now() + 10 * 60 * 1000,
     };
 
     const individualInfo = new IndividualInfo(
       bakongAccountId,
+      selectedCurrency,
       merchantName,
       merchantCity,
       optionalData,
@@ -48,6 +46,7 @@ module.exports = async (req, res) => {
     const response = khqr.generateIndividual(individualInfo);
 
     if (response?.status?.code !== 0) {
+      console.error("Bakong rejected the request:", response?.status);
       return res.status(500).json({
         error: "Failed to generate KHQR",
         details: response?.status,
@@ -60,6 +59,8 @@ module.exports = async (req, res) => {
     });
   } catch (err) {
     console.error("generate-khqr error:", err);
-    return res.status(500).json({ error: "Internal error generating QR" });
+    return res
+      .status(500)
+      .json({ error: "Internal error generating QR", message: err.message });
   }
-};
+}
