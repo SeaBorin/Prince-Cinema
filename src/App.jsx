@@ -16,6 +16,8 @@ import Profile from "./assets/components/page/Profile";
 import StaffCheckIn from "./assets/components/page/StaffCheckIn";
 import AdminUsers from "./assets/components/page/AdminUsers";
 import AdminDashboard from "./assets/components/page/AdminDashboard";
+import ManagerDashboard from "./assets/components/page/ManagerDashboard";
+import AdminFoodMenu from "./assets/components/page/AdminFoodMenu";
 
 function AppLayout() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
@@ -44,6 +46,8 @@ function AppLayout() {
           <Route path="/staff-checkin" element={<StaffCheckIn />} />
           <Route path="/admin-users" element={<AdminUsers />} />
           <Route path="/admin-dashboard" element={<AdminDashboard />} />
+          <Route path="/manager-dashboard" element={<ManagerDashboard />} />
+          <Route path="/admin-food" element={<AdminFoodMenu />} />
         </Routes>
       </main>
 

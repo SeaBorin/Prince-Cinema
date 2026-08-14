@@ -68,6 +68,7 @@ export default function NavBar({ onOpenAuthModal }) {
 
   const isStaffRole =
     role === "staff" || role === "manager" || role === "admin";
+  const isManagerRole = role === "manager" || role === "admin";
   const isAdminRole = role === "admin";
 
   const accountLinks = [
@@ -75,10 +76,14 @@ export default function NavBar({ onOpenAuthModal }) {
     ...(isStaffRole
       ? [{ name: "Staff Check-In", path: "/staff-checkin", icon: "🎟️" }]
       : []),
+    ...(isManagerRole
+      ? [{ name: "Branch Dashboard", path: "/manager-dashboard", icon: "🏢" }]
+      : []),
     ...(isAdminRole
       ? [
           { name: "Dashboard", path: "/admin-dashboard", icon: "📊" },
           { name: "Manage Users", path: "/admin-users", icon: "⚙️" },
+          { name: "Manage Food Menu", path: "/admin-food", icon: "🍿" },
         ]
       : []),
   ];

@@ -23,6 +23,7 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);
+  const [branch, setBranch] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,9 +31,6 @@ export const AuthProvider = ({ children }) => {
       setUser(currentUser);
       setLoading(false);
 
-      // Self-healing: if this account's Firestore doc is missing the
-      // email field (or missing entirely, e.g. old test accounts),
-      // backfill it automatically on login without touching their role.
       if (currentUser) {
         try {
           const userDocRef = doc(db, "users", currentUser.uid);
@@ -62,15 +60,21 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (!user) {
       setRole(null);
+      setBranch(null);
       return;
     }
     const userDocRef = doc(db, "users", user.uid);
-    const unsubscribeRole = onSnapshot(userDocRef, (snapshot) => {
-      setRole(
-        snapshot.exists() ? snapshot.data().role || "customer" : "customer",
-      );
+    const unsubscribeProfile = onSnapshot(userDocRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setRole(data.role || "customer");
+        setBranch(data.branch || null);
+      } else {
+        setRole("customer");
+        setBranch(null);
+      }
     });
-    return () => unsubscribeRole();
+    return () => unsubscribeProfile();
   }, [user]);
 
   const signup = async (email, password) => {
@@ -107,7 +111,15 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, role, signup, login, logout, resendVerificationEmail }}
+      value={{
+        user,
+        role,
+        branch,
+        signup,
+        login,
+        logout,
+        resendVerificationEmail,
+      }}
     >
       {!loading && children}
     </AuthContext.Provider>

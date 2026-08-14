@@ -1,73 +1,46 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { db } from "../../../firebase";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  collection,
+  onSnapshot,
+  serverTimestamp,
+} from "firebase/firestore";
 import FoodCard from "../FoodCard";
 import PaymentModal from "../PaymentModal";
-
-const FOOD_CATALOG = [
-  {
-    id: "f1",
-    name: "Caramel Popcorn (L)",
-    category: "Popcorn",
-    price: 3.5,
-    description:
-      "Freshly popped golden corn coated in rich sweet caramel sauce.",
-  },
-  {
-    id: "f2",
-    name: "Salted Butter Popcorn (L)",
-    category: "Popcorn",
-    price: 3.0,
-    description:
-      "Classic cinema-style hot popped corn with real melted butter.",
-  },
-  {
-    id: "f3",
-    name: "Classic Combo 1",
-    category: "Combos",
-    price: 5.5,
-    description:
-      "1 Large Popcorn + 1 Soft Drink (Coca-Cola / Sprite / Fanta 22oz).",
-  },
-  {
-    id: "f4",
-    name: "Couple Combo",
-    category: "Combos",
-    price: 9.0,
-    description: "1 Extra-Large Popcorn + 2 Soft Drinks (22oz) + 1 Snack.",
-  },
-  {
-    id: "f5",
-    name: "Coca-Cola Zero (32oz)",
-    category: "Beverages",
-    price: 2.0,
-    description: "Ice-cold sparkling beverage with zero sugar.",
-  },
-  {
-    id: "f6",
-    name: "Cheesy Hot Dog",
-    category: "Snacks",
-    price: 3.0,
-    description:
-      "Grilled sausage topped with melted cheddar cheese and mustard.",
-  },
-];
 
 export default function FoodList({ onRequireAuth }) {
   const { user, currentUser } = useAuth();
   const activeUser = user || currentUser;
 
+  const [menuItems, setMenuItems] = useState([]);
+  const [menuLoading, setMenuLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [cart, setCart] = useState([]);
   const [pendingOrder, setPendingOrder] = useState(null);
 
-  const categories = ["All", "Popcorn", "Combos", "Beverages", "Snacks"];
+  // Live menu, editable by admins via /admin-food
+  useEffect(() => {
+    const unsubscribe = onSnapshot(collection(db, "foodMenu"), (snap) => {
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      setMenuItems(list);
+      setMenuLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const categories = [
+    "All",
+    ...Array.from(new Set(menuItems.map((item) => item.category))).sort(),
+  ];
 
   const filteredItems =
     selectedCategory === "All"
-      ? FOOD_CATALOG
-      : FOOD_CATALOG.filter((item) => item.category === selectedCategory);
+      ? menuItems
+      : menuItems.filter((item) => item.category === selectedCategory);
 
   const handleAddToCart = (item, quantity) => {
     const existingIndex = cart.findIndex((c) => c.id === item.id);
@@ -127,10 +100,7 @@ export default function FoodList({ onRequireAuth }) {
 
     if (activeUser) {
       try {
-        // Use the order code as the document ID so staff can look it
-        // up directly at the snack counter
         const referenceCode = paidOrder.orderId || `SNACK-${Date.now()}`;
-
         const orderRef = doc(db, "bookings", referenceCode);
         await setDoc(orderRef, {
           ...paidOrder,
@@ -178,10 +148,26 @@ export default function FoodList({ onRequireAuth }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-          {filteredItems.map((item) => (
-            <FoodCard key={item.id} item={item} onAddToCart={handleAddToCart} />
-          ))}
+        <div className="lg:col-span-3">
+          {menuLoading ? (
+            <p className="text-xs text-zinc-500">Loading menu...</p>
+          ) : filteredItems.length === 0 ? (
+            <div className="text-center py-16 bg-zinc-900/40 border border-zinc-800 rounded-2xl">
+              <p className="text-zinc-400 text-sm">
+                No items available right now. Check back soon!
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+              {filteredItems.map((item) => (
+                <FoodCard
+                  key={item.id}
+                  item={item}
+                  onAddToCart={handleAddToCart}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 h-fit space-y-4 sticky top-28">

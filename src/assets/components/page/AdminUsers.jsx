@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../../../contexts/AuthContext";
 import { db } from "../../../firebase";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, onSnapshot, doc, updateDoc } from "firebase/firestore";
+import { CAMBODIA_BRANCHES } from "../../../data/cinemaData.js";
 
 const ROLE_OPTIONS = ["customer", "staff", "manager", "admin"];
 
@@ -25,9 +26,6 @@ export default function AdminUsers() {
   useEffect(() => {
     if (!isAdmin) return;
 
-    // No orderBy here on purpose — Firestore's orderBy silently EXCLUDES
-    // any document missing that field, which hid every account created
-    // before "createdAt" existed on user docs. We sort client-side instead.
     const usersRef = collection(db, "users");
 
     const unsubscribe = onSnapshot(usersRef, (snapshot) => {
@@ -59,12 +57,33 @@ export default function AdminUsers() {
 
     setSavingUid(targetUid);
     try {
-      const { doc, updateDoc } = await import("firebase/firestore");
-      await updateDoc(doc(db, "users", targetUid), { role: newRole });
+      const updates = { role: newRole };
+      // Clear branch assignment if demoted away from manager
+      if (newRole !== "manager") {
+        updates.branch = null;
+      }
+      await updateDoc(doc(db, "users", targetUid), updates);
       setSuccessMsg(`Role updated to "${newRole}".`);
     } catch (err) {
       console.error(err);
       setError("Failed to update role. Please try again.");
+    } finally {
+      setSavingUid(null);
+    }
+  };
+
+  const handleBranchChange = async (targetUid, newBranchId) => {
+    setError("");
+    setSuccessMsg("");
+    setSavingUid(targetUid);
+    try {
+      await updateDoc(doc(db, "users", targetUid), {
+        branch: newBranchId || null,
+      });
+      setSuccessMsg("Branch assignment updated.");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to update branch. Please try again.");
     } finally {
       setSavingUid(null);
     }
@@ -99,8 +118,7 @@ export default function AdminUsers() {
       <div>
         <h1 className="text-2xl font-black text-white">Manage Users</h1>
         <p className="text-xs text-zinc-400 mt-1">
-          Promote or demote accounts between Customer, Staff, Manager, and
-          Admin.
+          Promote or demote accounts, and assign managers to a branch.
         </p>
       </div>
 
@@ -125,6 +143,7 @@ export default function AdminUsers() {
         <div className="space-y-3">
           {users.map((u) => {
             const currentRole = u.role || "customer";
+            const isManager = currentRole === "manager";
             return (
               <div
                 key={u.uid}
@@ -143,16 +162,25 @@ export default function AdminUsers() {
                       </span>
                     )}
                   </p>
-                  <span
-                    className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                      ROLE_BADGE_STYLE[currentRole] || ROLE_BADGE_STYLE.customer
-                    }`}
-                  >
-                    {currentRole}
-                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                        ROLE_BADGE_STYLE[currentRole] ||
+                        ROLE_BADGE_STYLE.customer
+                      }`}
+                    >
+                      {currentRole}
+                    </span>
+                    {isManager && u.branch && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-zinc-800 text-zinc-300 border border-zinc-700">
+                        {CAMBODIA_BRANCHES.find((b) => b.id === u.branch)
+                          ?.name || u.branch}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
                   <select
                     value={currentRole}
                     disabled={savingUid === u.uid}
@@ -165,6 +193,25 @@ export default function AdminUsers() {
                       </option>
                     ))}
                   </select>
+
+                  {isManager && (
+                    <select
+                      value={u.branch || ""}
+                      disabled={savingUid === u.uid}
+                      onChange={(e) =>
+                        handleBranchChange(u.uid, e.target.value)
+                      }
+                      className="bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-amber-500 disabled:opacity-50 max-w-[160px]"
+                    >
+                      <option value="">No branch assigned</option>
+                      {CAMBODIA_BRANCHES.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name.replace("Prince Cinema - ", "")}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
                   {savingUid === u.uid && (
                     <span className="text-[10px] text-zinc-500">Saving...</span>
                   )}

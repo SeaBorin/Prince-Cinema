@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { db } from "../../firebase";
 import { collection, onSnapshot } from "firebase/firestore";
+import { CAMBODIA_BRANCHES } from "../../data/cinemaData.js";
 
 export default function BookingModal({
   movie,
@@ -13,14 +14,12 @@ export default function BookingModal({
   const { user, currentUser } = useAuth();
   const activeUser = user || currentUser;
 
-  const princeCinemas = [
-    { id: "prince-eden", name: "Prince Cinema - Eden Garden" },
-    { id: "prince-exchange", name: "Prince Cinema - Exchange Square" },
-    { id: "prince-aeon1", name: "Prince Cinema - AEON Mall 1" },
-    { id: "prince-aeon2", name: "Prince Cinema - Sen Sok (AEON 2)" },
-    { id: "prince-samai", name: "Prince Cinema - Samai Square" },
-    { id: "prince-citymall", name: "Prince Cinema - City Mall" },
-  ];
+  // Single source of truth — same branch list used by the Manager/Admin
+  // dashboards, so booking data and dashboard filters always match
+  const princeCinemas = CAMBODIA_BRANCHES.map((branch) => ({
+    id: branch.id,
+    name: branch.name,
+  }));
 
   const cinemaFormats = [
     {
@@ -92,7 +91,6 @@ export default function BookingModal({
   ];
   const seatsPerRow = 8;
 
-  // Calculates dynamic & unique hall based on Movie ID + Location + Format
   const getDynamicCinemaHall = (movieId, cinemaName, formatObj) => {
     if (!movieId || !formatObj) return "Hall 1 (2D Standard)";
 
@@ -103,7 +101,7 @@ export default function BookingModal({
       hash |= 0;
     }
 
-    const hallOffset = Math.abs(hash % 2); // Yields 0 or 1
+    const hallOffset = Math.abs(hash % 2);
     const hallNumber = formatObj.baseHall + hallOffset;
 
     return `Hall ${hallNumber} (${formatObj.typeLabel})`;
@@ -158,7 +156,6 @@ export default function BookingModal({
     return targetDate.toISOString();
   };
 
-  // Helper to generate normalized show ID
   const buildShowId = (movieId, cinema, formatId, date, time) => {
     const safeCinema = cinema.toLowerCase().replace(/[^a-z0-9]/g, "_");
     const safeDate = date.toLowerCase().replace(/[^a-z0-9]/g, "_");
@@ -177,7 +174,6 @@ export default function BookingModal({
     }
   }, [selectedDate]);
 
-  // Real-time listener for booked seats
   useEffect(() => {
     if (!movie || !isOpen || !db || isExpired) return;
 
@@ -317,7 +313,6 @@ export default function BookingModal({
         onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-4xl bg-zinc-900 border border-zinc-800 rounded-3xl shadow-2xl overflow-hidden my-8 max-h-[90vh] flex flex-col"
       >
-        {/* Sticky Header Section */}
         <div className="sticky top-0 z-20 flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-950/95 backdrop-blur-md shrink-0">
           <div className="flex items-center gap-3">
             <span className="text-2xl">🎬</span>
@@ -343,10 +338,8 @@ export default function BookingModal({
           </div>
         )}
 
-        {/* Scrollable Modal Content */}
         <div className="overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
           <div className="lg:col-span-2 space-y-6">
-            {/* Step 1: Cinema Location */}
             <div>
               <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider block mb-2">
                 1. Select Cinema Location (Prince Cinema)
@@ -372,7 +365,6 @@ export default function BookingModal({
               </select>
             </div>
 
-            {/* Step 2: Cinema Experience Format */}
             <div>
               <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider block mb-3">
                 2. Select Cinema Experience
@@ -403,7 +395,6 @@ export default function BookingModal({
               </div>
             </div>
 
-            {/* Step 3: Date Selection */}
             <div>
               <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider block mb-3">
                 3. Select Date
@@ -429,7 +420,6 @@ export default function BookingModal({
               </div>
             </div>
 
-            {/* Step 4: Showtime Selection */}
             <div>
               <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider block mb-3">
                 4. Select Showtime
@@ -467,7 +457,6 @@ export default function BookingModal({
               </div>
             </div>
 
-            {/* Step 5: Seat Selection */}
             <div>
               <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider block mb-3">
                 5. Choose Seats ({selectedSeats.length}/6)
@@ -564,7 +553,6 @@ export default function BookingModal({
             </div>
           </div>
 
-          {/* Right Summary Side */}
           <div className="bg-zinc-950/60 rounded-2xl p-5 border border-zinc-800/80 flex flex-col justify-between">
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-zinc-200 uppercase tracking-wider border-b border-zinc-800 pb-2">
